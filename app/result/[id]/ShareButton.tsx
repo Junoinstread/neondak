@@ -51,16 +51,6 @@ function getShareText(result: ResultArchetype) {
   return `${result.title}\n\n내 넌딱 판정 봐봐ㅋㅋ 너도 사진 올려서 판정받아봐.`;
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isAndroidFileReadError(error: unknown) {
-  return /requested file could not be read|permission/i.test(
-    getErrorMessage(error),
-  );
-}
-
 export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
   const [status, setStatus] = useState<ShareStatus>('idle');
   const [manualUrl, setManualUrl] = useState<string | null>(null);
@@ -110,21 +100,21 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
     setStatus('downloaded-with-manual-link');
   }
 
-  async function shareTextOrCopyLink(url: string) {
+  async function shareTextUrl(shareText: string, shareUrl: string) {
     const browserNavigator =
       typeof navigator === 'undefined' ? null : navigator;
 
     if (browserNavigator?.share) {
       await browserNavigator.share({
         title: '넌딱 판정 결과',
-        text: getShareText(result),
-        url,
+        text: shareText,
+        url: shareUrl,
       });
       setStatus('shared');
       return;
     }
 
-    setStatus((await copyShareUrl(url)) ? 'copied' : 'manual');
+    setStatus((await copyShareUrl(shareUrl)) ? 'copied' : 'manual');
   }
 
   async function handleShare() {
@@ -148,7 +138,7 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
       });
       const canShareFiles = canShareStoryFile(file);
 
-      console.log('NEONDAK_ANDROID_SHARE_DEBUG', {
+      console.log('NEONDAK_SHARE_FILE_DEBUG', {
         userAgent: browserNavigator?.userAgent ?? '',
         canShareFiles,
         fileName: file.name,
@@ -170,6 +160,11 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
         return;
       }
 
+      if (browserNavigator?.share) {
+        await shareTextUrl(shareText, shareUrl);
+        return;
+      }
+
       await fallbackToDownloadAndLink(file, shareUrl);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -177,11 +172,7 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
         return;
       }
 
-      console.error('NEONDAK_ANDROID_SHARE_ERROR', {
-        error,
-        message: getErrorMessage(error),
-        isAndroidFileReadError: isAndroidFileReadError(error),
-      });
+      console.error('NEONDAK_SHARE_FILE_ERROR', error);
 
       if (file) {
         await fallbackToDownloadAndLink(file, shareUrl);
@@ -189,7 +180,7 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
       }
 
       try {
-        await shareTextOrCopyLink(shareUrl);
+        await shareTextUrl(shareText, shareUrl);
       } catch (fallbackError) {
         console.error('NEONDAK_SHARE_FILE_ERROR', fallbackError);
         setStatus('failed');
@@ -203,7 +194,7 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
       : status === 'shared'
         ? '공유 완료'
         : status === 'downloaded-with-link'
-          ? '이미지는 저장했고 링크는 복사했어요'
+          ? '공유가 안 돼서 이미지를 저장하고 링크를 복사했어요'
           : status === 'downloaded-with-manual-link'
             ? '이미지는 저장했고 링크도 아래에 뒀어요'
           : status === 'failed'
@@ -214,7 +205,7 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
     status === 'shared'
       ? '판정 보내기 완료'
       : status === 'downloaded-with-link'
-        ? '이미지는 저장했고 링크는 복사했어요'
+        ? '공유가 안 돼서 이미지를 저장하고 링크를 복사했어요'
         : status === 'downloaded-with-manual-link'
           ? '이미지는 저장했고 링크도 아래에 뒀어요'
       : status === 'copied'
