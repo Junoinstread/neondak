@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import type { ResultArchetype } from '@/lib/resultArchetypes';
 import { createStoryCardFile } from './drawStoryCard';
 
@@ -9,6 +9,7 @@ type ShareStatus =
   | 'opening'
   | 'sharing'
   | 'shared'
+  | 'open-browser-guide'
   | 'link-copied-fallback'
   | 'manual'
   | 'failed';
@@ -37,6 +38,30 @@ function isAndroidDevice() {
   return /Android/i.test(navigator.userAgent);
 }
 
+function isKakaoInAppBrowser() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const ua = navigator.userAgent.toLowerCase();
+  return ua.includes('kakaotalk') || ua.includes('kakaostory');
+}
+
+function isInstagramInAppBrowser() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  return navigator.userAgent.toLowerCase().includes('instagram');
+}
+
+function isAndroidBlockedInAppBrowser() {
+  return (
+    isAndroidDevice() &&
+    (isKakaoInAppBrowser() || isInstagramInAppBrowser())
+  );
+}
+
 function isIOSDevice() {
   if (typeof navigator === 'undefined') {
     return false;
@@ -63,9 +88,54 @@ function getShareText(result: ResultArchetype) {
   return `${result.title}\n\n내 넌딱 판정 봐봐ㅋㅋ 너도 사진 올려서 판정받아봐.`;
 }
 
+function getCurrentPageUrl(fallbackUrl: string) {
+  if (typeof window === 'undefined') {
+    return fallbackUrl;
+  }
+
+  return window.location.href || fallbackUrl;
+}
+
+function buildChromeIntentUrl(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+    const pathWithHost = `${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+    const scheme = parsedUrl.protocol.replace(':', '') || 'https';
+
+    return `intent://${pathWithHost}#Intent;scheme=${scheme};package=com.android.chrome;end`;
+  } catch {
+    return url;
+  }
+}
+
+function openChromeForAndroid(url: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.location.href = buildChromeIntentUrl(url);
+}
+
+function subscribeToBrowserSnapshot() {
+  return () => {};
+}
+
+function getBlockedInAppBrowserSnapshot() {
+  return isAndroidBlockedInAppBrowser();
+}
+
+function getServerBlockedInAppBrowserSnapshot() {
+  return false;
+}
+
 export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
   const [status, setStatus] = useState<ShareStatus>('idle');
   const [manualUrl, setManualUrl] = useState<string | null>(null);
+  const blockedInAppBrowser = useSyncExternalStore(
+    subscribeToBrowserSnapshot,
+    getBlockedInAppBrowserSnapshot,
+    getServerBlockedInAppBrowserSnapshot,
+  );
 
   async function copyShareUrl(url: string) {
     const browserNavigator =
@@ -131,13 +201,36 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
     const shareUrl = getShareUrl();
     const shareText = getShareText(result);
     const isAndroid = isAndroidDevice();
+    const isBlockedInAppBrowser = isAndroidBlockedInAppBrowser();
 
     setManualUrl(null);
-    setStatus(isAndroid ? 'opening' : 'sharing');
+    setStatus(
+      isBlockedInAppBrowser
+        ? 'open-browser-guide'
+        : isAndroid
+          ? 'opening'
+          : 'sharing',
+    );
 
     try {
       const browserNavigator =
         typeof navigator === 'undefined' ? null : navigator;
+
+      if (isBlockedInAppBrowser) {
+        const openUrl = getCurrentPageUrl(shareUrl);
+
+        console.log('NEONDAK_BLOCKED_IN_APP_BROWSER_SHARE_DEBUG', {
+          userAgent: browserNavigator?.userAgent ?? '',
+          strategy: 'open-external-browser',
+          shareUrl,
+          openUrl,
+        });
+
+        const copied = await copyShareUrl(shareUrl);
+        setStatus(copied ? 'open-browser-guide' : 'manual');
+        openChromeForAndroid(openUrl);
+        return;
+      }
 
       if (isAndroid) {
         console.log('NEONDAK_ANDROID_TEXT_SHARE_DEBUG', {
@@ -197,6 +290,12 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
         return;
       }
 
+      if (isBlockedInAppBrowser) {
+        console.error('NEONDAK_BLOCKED_IN_APP_BROWSER_OPEN_ERROR', error);
+        setStatus('open-browser-guide');
+        return;
+      }
+
       if (isAndroid) {
         console.error('NEONDAK_ANDROID_TEXT_SHARE_ERROR', error);
         await copyLinkFallback(shareUrl);
@@ -215,17 +314,23 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
       ? '이미지 만드는 중...'
       : status === 'shared'
         ? '공유 완료'
+        : status === 'open-browser-guide'
+          ? 'Chrome에서 열고 공유하기'
         : status === 'link-copied-fallback'
           ? '공유가 안 돼서 링크를 복사했어요'
           : status === 'manual'
             ? '공유가 안 돼서 링크를 아래에 뒀어요'
           : status === 'failed'
             ? '공유 실패. 다시 시도해줘.'
-            : '친구에게 판정 보내기';
+            : blockedInAppBrowser
+              ? 'Chrome에서 열고 공유하기'
+              : '친구에게 판정 보내기';
 
   const statusMessage =
     status === 'shared'
       ? '판정 보내기 완료'
+      : status === 'open-browser-guide'
+        ? '카톡/인스타 앱 안에서는 공유가 막혀요. Chrome에서 열고 다시 공유해줘.'
       : status === 'link-copied-fallback'
         ? '공유가 안 돼서 링크를 복사했어요'
       : status === 'manual'
