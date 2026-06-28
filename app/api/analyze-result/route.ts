@@ -1,9 +1,11 @@
-import { buildVisualPrompt } from '@/lib/buildVisualPrompt';
+import { createHash } from 'node:crypto';
 import { analyzeImageWithOpenAI } from '@/lib/openai';
 import {
-  DEFAULT_REPLICATE_MODEL_TYPE,
-  generateWithReplicate,
-} from '@/lib/replicate';
+  RESULT_ARCHETYPES,
+  getResultById,
+  pickResultBySignals,
+  type ResultArchetype,
+} from '@/lib/resultArchetypes';
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -11,7 +13,7 @@ export async function POST(request: Request) {
 
   if (!(image instanceof File)) {
     return Response.json(
-      { error: '분석할 이미지 파일을 보내주세요.' },
+      { error: '판정할 이미지 파일을 보내주세요.' },
       { status: 400 },
     );
   }
@@ -23,55 +25,78 @@ export async function POST(request: Request) {
     );
   }
 
-  let result;
+  const imageHash = createHash('sha256')
+    .update(Buffer.from(await image.arrayBuffer()))
+    .digest('hex');
+  let routingResult;
 
   try {
-    result = await analyzeImageWithOpenAI(image);
+    routingResult = await analyzeImageWithOpenAI(image);
   } catch (error) {
     return Response.json(
       {
         error:
           error instanceof Error
             ? error.message
-            : 'OpenAI 이미지 분석 요청에 실패했습니다.',
+            : '사진 판정 요청에 실패했습니다.',
       },
       { status: 500 },
     );
   }
 
-  const internalVisualPrompt = buildVisualPrompt(result);
-  let transformedImageUrl: string | null = null;
-  let replicateError: string | null = null;
-  let replicateParams = null;
-  let replicateFinalPrompt: string | null = null;
-  let replicateNegativePrompt: string | null = null;
+  const resolvedResult = pickResultBySignals({
+    ...routingResult,
+    imageHash,
+  });
+  const archetype = (getResultById(resolvedResult.id) ??
+    resolvedResult) as ResultArchetype;
+  const resultArchetypes: readonly ResultArchetype[] = RESULT_ARCHETYPES;
+  const analysis = routingResult as typeof routingResult & {
+    title?: unknown;
+  };
+  const selectedIndex = archetype.cluster
+    ? resultArchetypes.filter(
+        (candidate) => candidate.cluster === archetype.cluster,
+      ).findIndex((candidate) => candidate.id === archetype.id)
+    : -1;
+  const responsePayload = {
+    ...routingResult,
+    selectedResultId: archetype.id,
+    title: archetype.title,
+    punchline: archetype.punchline,
+    reasons: archetype.reasons,
+    scores: archetype.scores,
+    result: archetype,
+  };
 
-  try {
-    const replicateResult = await generateWithReplicate(
-      image,
-      internalVisualPrompt,
-      DEFAULT_REPLICATE_MODEL_TYPE,
-    );
-    transformedImageUrl = replicateResult.imageUrl;
-    replicateParams = replicateResult.params;
-    replicateFinalPrompt = replicateResult.finalPrompt;
-    replicateNegativePrompt = replicateResult.negativePrompt;
-  } catch (error) {
-    replicateError =
-      error instanceof Error
-        ? error.message
-        : 'Replicate 이미지 변환에 실패했습니다.';
-    console.error('Replicate image transformation failed:', error);
+  if (process.env.NODE_ENV === 'development') {
+    console.info('neondak routing signals', {
+      photoType: routingResult.photoType,
+      personCount: routingResult.personCount,
+      genderPresentation: routingResult.genderPresentation,
+      gaze: routingResult.gaze,
+      expression: routingResult.expression,
+      pose: routingResult.pose,
+      framing: routingResult.framing,
+      outfitStyle: routingResult.outfitStyle,
+      photoMood: routingResult.photoMood,
+      detectedTriggers: routingResult.detectedTriggers,
+      selectedCluster: routingResult.selectedCluster,
+      resolvedResultId: archetype.id,
+    });
   }
 
-  return Response.json({
-    ...result,
-    internalVisualPrompt,
-    replicateModel: DEFAULT_REPLICATE_MODEL_TYPE,
-    replicateParams,
-    replicateFinalPrompt,
-    replicateNegativePrompt,
-    replicateError,
-    transformedImageUrl,
+  console.log('NEONDAK_FINAL_RESPONSE_DEBUG', {
+    resolvedResultId: archetype.id,
+    archetypeTitle: archetype.title,
+    responseTitle: responsePayload.title,
+    analysisTitle: analysis.title,
+    selectedCluster: routingResult.selectedCluster,
+    genderPresentation: routingResult.genderPresentation,
+    imageHash,
+    selectedIndex,
+    analysis,
   });
+
+  return Response.json(responsePayload);
 }

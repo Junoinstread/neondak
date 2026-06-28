@@ -1,52 +1,209 @@
 'use client';
 
 import { useState } from 'react';
+import type { ResultArchetype } from '@/lib/resultArchetypes';
+import {
+  createStoryCardFile,
+  downloadStoryCardFile,
+} from './drawStoryCard';
 
-type ShareStatus = 'shared' | 'copied' | 'failed' | null;
+type ShareStatus =
+  | 'idle'
+  | 'sharing'
+  | 'shared'
+  | 'downloaded-with-link'
+  | 'downloaded-with-manual-link'
+  | 'copied'
+  | 'manual'
+  | 'failed';
 
-const shareData = {
-  title: '넌딱',
-  text: '내 결과 인정? 노인정?',
+type ShareButtonProps = {
+  result: ResultArchetype;
+  photoUrl: string | null;
 };
 
-export default function ShareButton() {
-  const [status, setStatus] = useState<ShareStatus>(null);
+function canShareStoryFile(file: File) {
+  const browserNavigator =
+    typeof navigator === 'undefined' ? null : navigator;
 
-  async function copyCurrentUrl(url: string) {
-    await navigator.clipboard.writeText(url);
-    setStatus('copied');
+  try {
+    return browserNavigator?.canShare?.({ files: [file] }) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+function getShareUrl() {
+  if (typeof window === 'undefined') {
+    return 'https://neondak.vercel.app';
+  }
+
+  return window.location.origin || 'https://neondak.vercel.app';
+}
+
+function getShareText(result: ResultArchetype) {
+  return `${result.title}\n\n내 넌딱 판정 봐봐ㅋㅋ 너도 사진 올려서 판정받아봐.`;
+}
+
+export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
+  const [status, setStatus] = useState<ShareStatus>('idle');
+  const [manualUrl, setManualUrl] = useState<string | null>(null);
+
+  async function copyShareUrl(url: string) {
+    const browserNavigator =
+      typeof navigator === 'undefined' ? null : navigator;
+
+    if (browserNavigator?.clipboard?.writeText) {
+      try {
+        await browserNavigator.clipboard.writeText(url);
+        return true;
+      } catch {
+        // Fall through to the legacy copy path or manual URL display.
+      }
+    }
+
+    if (typeof document.execCommand === 'function') {
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+
+      if (copied) {
+        return true;
+      }
+    }
+
+    setManualUrl(url);
+    return false;
+  }
+
+  async function fallbackToDownloadAndLink(file: File, shareUrl: string) {
+    downloadStoryCardFile(file);
+
+    if (await copyShareUrl(shareUrl)) {
+      setStatus('downloaded-with-link');
+      return;
+    }
+
+    setStatus('downloaded-with-manual-link');
+  }
+
+  async function shareTextOrCopyLink(url: string) {
+    const browserNavigator =
+      typeof navigator === 'undefined' ? null : navigator;
+
+    if (browserNavigator?.share) {
+      await browserNavigator.share({
+        title: '넌딱 판정 결과',
+        text: getShareText(result),
+        url,
+      });
+      setStatus('shared');
+      return;
+    }
+
+    setStatus((await copyShareUrl(url)) ? 'copied' : 'manual');
   }
 
   async function handleShare() {
-    const url = window.location.href;
+    if (status === 'sharing') {
+      return;
+    }
+
+    const shareUrl = getShareUrl();
+    const shareText = getShareText(result);
+    let file: File | null = null;
+
+    setManualUrl(null);
+    setStatus('sharing');
 
     try {
-      if (navigator.share) {
-        await navigator.share({
-          ...shareData,
-          url,
+      const browserNavigator =
+        typeof navigator === 'undefined' ? null : navigator;
+      file = await createStoryCardFile({
+        result,
+        photoUrl,
+      });
+      const canShareFiles = canShareStoryFile(file);
+
+      console.log(
+        'NEONDAK_SHARE_FILE_DEBUG',
+        JSON.stringify({
+          canShareFiles,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          shareText,
+          shareUrl,
+        }),
+      );
+
+      if (canShareFiles && browserNavigator?.share) {
+        await browserNavigator.share({
+          title: '넌딱 판정 결과',
+          text: shareText,
+          url: shareUrl,
+          files: [file],
         });
         setStatus('shared');
         return;
       }
 
-      await copyCurrentUrl(url);
+      await fallbackToDownloadAndLink(file, shareUrl);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        setStatus('idle');
         return;
       }
 
-      setStatus('failed');
+      console.error('NEONDAK_SHARE_FILE_ERROR', error);
+
+      if (file) {
+        await fallbackToDownloadAndLink(file, shareUrl);
+        return;
+      }
+
+      try {
+        await shareTextOrCopyLink(shareUrl);
+      } catch (fallbackError) {
+        console.error('NEONDAK_SHARE_FILE_ERROR', fallbackError);
+        setStatus('failed');
+      }
     }
   }
 
+  const buttonLabel =
+    status === 'sharing'
+      ? '이미지 만드는 중...'
+      : status === 'shared'
+        ? '공유 완료'
+        : status === 'downloaded-with-link'
+          ? '이미지는 저장했고 링크는 복사했어요'
+          : status === 'downloaded-with-manual-link'
+            ? '이미지는 저장했고 링크도 아래에 뒀어요'
+          : status === 'failed'
+            ? '공유 실패. 다시 시도해줘.'
+            : '친구에게 판정 보내기';
+
   const statusMessage =
     status === 'shared'
-      ? '공유창을 열었어요'
+      ? '판정 보내기 완료'
+      : status === 'downloaded-with-link'
+        ? '이미지는 저장했고 링크는 복사했어요'
+        : status === 'downloaded-with-manual-link'
+          ? '이미지는 저장했고 링크도 아래에 뒀어요'
       : status === 'copied'
         ? '링크 복사 완료'
+      : status === 'manual'
+          ? '링크를 복사해서 친구한테 보내라'
         : status === 'failed'
-          ? '공유에 실패했어요'
+          ? '공유 실패'
           : null;
 
   return (
@@ -54,15 +211,26 @@ export default function ShareButton() {
       <button
         type="button"
         onClick={handleShare}
-        className="w-full rounded-2xl bg-white py-4 text-center text-base font-black text-zinc-950 transition active:scale-[0.98]"
+        disabled={status === 'sharing'}
+        className="w-full border-4 border-zinc-950 bg-white py-4 text-center text-base font-black text-zinc-950 shadow-[6px_6px_0_rgba(0,0,0,0.5)] transition active:translate-x-1 active:translate-y-1 active:shadow-[3px_3px_0_rgba(0,0,0,0.5)]"
       >
-        친구한테 보내기
+        {buttonLabel}
       </button>
 
       {statusMessage ? (
-        <p className="mt-3 text-center text-sm font-semibold text-fuchsia-200">
+        <p className="mt-3 text-center text-sm font-black text-red-200">
           {statusMessage}
         </p>
+      ) : null}
+
+      {manualUrl ? (
+        <input
+          readOnly
+          value={manualUrl}
+          onFocus={(event) => event.currentTarget.select()}
+          className="mt-3 w-full border-2 border-white/30 bg-black/35 px-3 py-2 text-center text-xs font-bold text-white"
+          aria-label="공유 링크"
+        />
       ) : null}
     </div>
   );

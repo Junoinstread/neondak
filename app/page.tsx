@@ -2,23 +2,25 @@ import Link from 'next/link';
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-6">
+    <main className="flex min-h-screen items-center justify-center bg-[#11100d] px-6 text-white">
       <section className="w-full max-w-md text-center">
-        <p className="text-sm text-zinc-400 mb-3">AI 첫인상 판정</p>
+        <p className="mb-3 text-sm font-black text-red-300">
+          사진 기반 밈 판정
+        </p>
 
-        <h1 className="text-5xl font-black tracking-tight mb-4">넌딱</h1>
+        <h1 className="mb-4 text-6xl font-black tracking-tight">넌딱</h1>
 
-        <p className="text-zinc-300 leading-7 mb-8">
-          사진 한 장으로 보는 내 분위기.
+        <p className="mb-8 break-keep text-lg font-bold leading-8 text-zinc-200">
+          사진 한 장 올리면
           <br />
-          친구들이 인정할까?
+          넌 딱 뭐 하는 상인지 쾅 찍어준다.
         </p>
 
         <Link
           href="/create"
-          className="block w-full rounded-2xl bg-white text-zinc-950 py-4 font-bold text-lg"
+          className="block w-full border-4 border-zinc-950 bg-red-600 py-4 text-lg font-black text-white shadow-[7px_7px_0_rgba(0,0,0,0.65)] transition active:translate-x-1 active:translate-y-1 active:shadow-[3px_3px_0_rgba(0,0,0,0.65)]"
         >
-          내 결과 만들기
+          판정 받기
         </Link>
       </section>
     </main>
