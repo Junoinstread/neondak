@@ -2,18 +2,14 @@
 
 import { useState } from 'react';
 import type { ResultArchetype } from '@/lib/resultArchetypes';
-import {
-  createStoryCardFile,
-  downloadStoryCardFile,
-} from './drawStoryCard';
+import { createStoryCardFile } from './drawStoryCard';
 
 type ShareStatus =
   | 'idle'
+  | 'opening'
   | 'sharing'
   | 'shared'
-  | 'downloaded-with-link'
-  | 'downloaded-with-manual-link'
-  | 'copied'
+  | 'link-copied-fallback'
   | 'manual'
   | 'failed';
 
@@ -105,72 +101,61 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
     return false;
   }
 
-  async function fallbackToDownloadAndLink(file: File, shareUrl: string) {
-    downloadStoryCardFile(file);
-
-    if (await copyShareUrl(shareUrl)) {
-      setStatus('downloaded-with-link');
-      return;
-    }
-
-    setStatus('downloaded-with-manual-link');
-  }
-
   async function shareTextUrl(shareText: string, shareUrl: string) {
     const browserNavigator =
       typeof navigator === 'undefined' ? null : navigator;
 
-    if (browserNavigator?.share) {
-      await browserNavigator.share({
-        title: '넌딱 판정 결과',
-        text: shareText,
-        url: shareUrl,
-      });
-      setStatus('shared');
-      return;
+    if (!browserNavigator?.share) {
+      throw new Error('Web Share API를 사용할 수 없습니다.');
     }
 
-    setStatus((await copyShareUrl(shareUrl)) ? 'copied' : 'manual');
+    await browserNavigator.share({
+      title: '넌딱 판정 결과',
+      text: shareText,
+      url: shareUrl,
+    });
+    setStatus('shared');
+  }
+
+  async function copyLinkFallback(shareUrl: string) {
+    setStatus(
+      (await copyShareUrl(shareUrl)) ? 'link-copied-fallback' : 'manual',
+    );
   }
 
   async function handleShare() {
-    if (status === 'sharing') {
+    if (status === 'opening' || status === 'sharing') {
       return;
     }
 
     const shareUrl = getShareUrl();
     const shareText = getShareText(result);
-    let file: File | null = null;
+    const isAndroid = isAndroidDevice();
 
     setManualUrl(null);
-    setStatus('sharing');
+    setStatus(isAndroid ? 'opening' : 'sharing');
 
     try {
       const browserNavigator =
         typeof navigator === 'undefined' ? null : navigator;
 
-      if (isAndroidDevice()) {
-        console.log('NEONDAK_SHARE_FILE_DEBUG', {
+      if (isAndroid) {
+        console.log('NEONDAK_ANDROID_TEXT_SHARE_DEBUG', {
           userAgent: browserNavigator?.userAgent ?? '',
-          platform: 'android',
-          strategy: 'text-url-share',
+          strategy: 'android-text-url-share',
           shareUrl,
         });
 
-        if (browserNavigator?.share) {
-          await shareTextUrl(shareText, shareUrl);
+        if (!browserNavigator?.share) {
+          await copyLinkFallback(shareUrl);
           return;
         }
 
-        file = await createStoryCardFile({
-          result,
-          photoUrl,
-        });
-        await fallbackToDownloadAndLink(file, shareUrl);
+        await shareTextUrl(shareText, shareUrl);
         return;
       }
 
-      file = await createStoryCardFile({
+      const file = await createStoryCardFile({
         result,
         photoUrl,
       });
@@ -205,41 +190,35 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
         return;
       }
 
-      await fallbackToDownloadAndLink(file, shareUrl);
+      setStatus('failed');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setStatus('idle');
         return;
       }
 
-      console.error('NEONDAK_SHARE_FILE_ERROR', error);
-
-      if (!file) {
-        try {
-          file = await createStoryCardFile({
-            result,
-            photoUrl,
-          });
-        } catch (fallbackFileError) {
-          console.error('NEONDAK_SHARE_FILE_ERROR', fallbackFileError);
-          setStatus('failed');
-          return;
-        }
+      if (isAndroid) {
+        console.error('NEONDAK_ANDROID_TEXT_SHARE_ERROR', error);
+        await copyLinkFallback(shareUrl);
+        return;
       }
 
-      await fallbackToDownloadAndLink(file, shareUrl);
+      console.error('NEONDAK_SHARE_FILE_ERROR', error);
+      setStatus('failed');
     }
   }
 
   const buttonLabel =
-    status === 'sharing'
+    status === 'opening'
+      ? '공유 여는 중...'
+      : status === 'sharing'
       ? '이미지 만드는 중...'
       : status === 'shared'
         ? '공유 완료'
-        : status === 'downloaded-with-link'
-          ? '공유가 안 돼서 이미지를 저장하고 링크를 복사했어요'
-          : status === 'downloaded-with-manual-link'
-            ? '이미지는 저장했고 링크도 아래에 뒀어요'
+        : status === 'link-copied-fallback'
+          ? '공유가 안 돼서 링크를 복사했어요'
+          : status === 'manual'
+            ? '공유가 안 돼서 링크를 아래에 뒀어요'
           : status === 'failed'
             ? '공유 실패. 다시 시도해줘.'
             : '친구에게 판정 보내기';
@@ -247,14 +226,10 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
   const statusMessage =
     status === 'shared'
       ? '판정 보내기 완료'
-      : status === 'downloaded-with-link'
-        ? '공유가 안 돼서 이미지를 저장하고 링크를 복사했어요'
-        : status === 'downloaded-with-manual-link'
-          ? '이미지는 저장했고 링크도 아래에 뒀어요'
-      : status === 'copied'
-        ? '링크 복사 완료'
+      : status === 'link-copied-fallback'
+        ? '공유가 안 돼서 링크를 복사했어요'
       : status === 'manual'
-          ? '링크를 복사해서 친구한테 보내라'
+          ? '공유가 안 돼서 링크를 아래에 뒀어요'
         : status === 'failed'
           ? '공유 실패'
           : null;
@@ -264,7 +239,7 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
       <button
         type="button"
         onClick={handleShare}
-        disabled={status === 'sharing'}
+        disabled={status === 'opening' || status === 'sharing'}
         className="w-full border-4 border-zinc-950 bg-white py-4 text-center text-base font-black text-zinc-950 shadow-[6px_6px_0_rgba(0,0,0,0.5)] transition active:translate-x-1 active:translate-y-1 active:shadow-[3px_3px_0_rgba(0,0,0,0.5)]"
       >
         {buttonLabel}
