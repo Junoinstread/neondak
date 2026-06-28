@@ -475,6 +475,31 @@ export function storyCanvasToPngBlob(canvas: HTMLCanvasElement) {
   });
 }
 
+export function storyCanvasToJpegBlob(
+  canvas: HTMLCanvasElement,
+  quality = 0.92,
+) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error('스토리 카드 JPEG를 만들지 못했습니다.'));
+          return;
+        }
+
+        if (blob.size <= 0) {
+          reject(new Error('스토리 카드 JPEG가 비어 있습니다.'));
+          return;
+        }
+
+        resolve(blob);
+      },
+      'image/jpeg',
+      quality,
+    );
+  });
+}
+
 export async function createStoryCardFile(input: DrawStoryCardInput) {
   const canvas = await drawStoryCardToCanvas(input);
   const blob = await storyCanvasToPngBlob(canvas);
@@ -483,6 +508,12 @@ export async function createStoryCardFile(input: DrawStoryCardInput) {
     type: 'image/png',
     lastModified: Date.now(),
   });
+}
+
+export async function createStoryCardJpegBlob(input: DrawStoryCardInput) {
+  const canvas = await drawStoryCardToCanvas(input);
+
+  return storyCanvasToJpegBlob(canvas, 0.92);
 }
 
 export function downloadStoryCardFile(file: File) {
