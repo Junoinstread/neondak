@@ -7,31 +7,54 @@ import {
   type ResultArchetype,
 } from '@/lib/resultArchetypes';
 
-export async function POST(request: Request) {
-  const formData = await request.formData();
-  const image = formData.get('image');
+type AnalyzeRequestBody = {
+  photoDataUrl?: unknown;
+};
 
-  if (!(image instanceof File)) {
+export async function POST(request: Request) {
+  let body: AnalyzeRequestBody;
+
+  try {
+    body = (await request.json()) as AnalyzeRequestBody;
+  } catch {
     return Response.json(
-      { error: '판정할 이미지 파일을 보내주세요.' },
+      { error: 'photoDataUrl is required' },
       { status: 400 },
     );
   }
 
-  if (!image.type.startsWith('image/')) {
+  const photoDataUrl = body.photoDataUrl;
+
+  console.log('NEONDAK_ANALYZE_API_DEBUG', {
+    hasPhotoDataUrl: Boolean(photoDataUrl),
+    photoDataUrlLength:
+      typeof photoDataUrl === 'string' ? photoDataUrl.length : 0,
+    startsWithDataImage:
+      typeof photoDataUrl === 'string' &&
+      photoDataUrl.startsWith('data:image/'),
+  });
+
+  if (typeof photoDataUrl !== 'string' || !photoDataUrl) {
     return Response.json(
-      { error: '이미지 파일만 업로드할 수 있습니다.' },
+      { error: 'photoDataUrl is required' },
+      { status: 400 },
+    );
+  }
+
+  if (!photoDataUrl.startsWith('data:image/')) {
+    return Response.json(
+      { error: '이미지 data URL만 업로드할 수 있습니다.' },
       { status: 400 },
     );
   }
 
   const imageHash = createHash('sha256')
-    .update(Buffer.from(await image.arrayBuffer()))
+    .update(photoDataUrl)
     .digest('hex');
   let routingResult;
 
   try {
-    routingResult = await analyzeImageWithOpenAI(image);
+    routingResult = await analyzeImageWithOpenAI(photoDataUrl);
   } catch (error) {
     return Response.json(
       {

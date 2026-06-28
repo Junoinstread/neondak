@@ -378,16 +378,12 @@ function isAnalyzeResult(value: unknown): value is AnalyzeResult {
   );
 }
 
-export async function analyzeImageWithOpenAI(image: File) {
+export async function analyzeImageWithOpenAI(photoDataUrl: string) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY가 설정되어 있지 않습니다.');
   }
-
-  const imageBytes = await image.arrayBuffer();
-  const base64Image = Buffer.from(imageBytes).toString('base64');
-  const dataUrl = `data:${image.type};base64,${base64Image}`;
 
   const openAIResponse = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -436,7 +432,7 @@ export async function analyzeImageWithOpenAI(image: File) {
             },
             {
               type: 'input_image',
-              image_url: dataUrl,
+              image_url: photoDataUrl,
               detail: 'low',
             },
           ],

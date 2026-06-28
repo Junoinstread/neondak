@@ -16,7 +16,7 @@ type ResultExperienceProps = {
   result: ResultArchetype;
 };
 
-const resultPhotoStorageKey = 'neondak:latest-result-photo';
+const resultPhotoStorageKey = 'neondak:photoDataUrl';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

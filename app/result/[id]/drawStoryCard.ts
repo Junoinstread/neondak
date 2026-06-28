@@ -460,12 +460,17 @@ export async function drawStoryCardToCanvas({
 export function storyCanvasToPngBlob(canvas: HTMLCanvasElement) {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
+      if (!blob) {
+        reject(new Error('스토리 카드 PNG를 만들지 못했습니다.'));
         return;
       }
 
-      reject(new Error('스토리 카드 PNG를 만들지 못했습니다.'));
+      if (blob.size <= 0) {
+        reject(new Error('스토리 카드 PNG가 비어 있습니다.'));
+        return;
+      }
+
+      resolve(blob);
     }, 'image/png');
   });
 }
@@ -476,17 +481,21 @@ export async function createStoryCardFile(input: DrawStoryCardInput) {
 
   return new File([blob], 'neondak-result.png', {
     type: 'image/png',
+    lastModified: Date.now(),
   });
 }
 
 export function downloadStoryCardFile(file: File) {
-  const imageUrl = URL.createObjectURL(file);
+  const objectUrl = URL.createObjectURL(file);
   const link = document.createElement('a');
 
-  link.href = imageUrl;
+  link.href = objectUrl;
   link.download = file.name;
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(imageUrl), 1000);
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 30_000);
 }

@@ -34,6 +34,12 @@ function canShareStoryFile(file: File) {
 }
 
 function getShareUrl() {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+
+  if (configuredSiteUrl) {
+    return configuredSiteUrl;
+  }
+
   if (typeof window === 'undefined') {
     return 'https://neondak.vercel.app';
   }
@@ -43,6 +49,16 @@ function getShareUrl() {
 
 function getShareText(result: ResultArchetype) {
   return `${result.title}\n\n내 넌딱 판정 봐봐ㅋㅋ 너도 사진 올려서 판정받아봐.`;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isAndroidFileReadError(error: unknown) {
+  return /requested file could not be read|permission/i.test(
+    getErrorMessage(error),
+  );
 }
 
 export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
@@ -132,25 +148,24 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
       });
       const canShareFiles = canShareStoryFile(file);
 
-      console.log(
-        'NEONDAK_SHARE_FILE_DEBUG',
-        JSON.stringify({
-          canShareFiles,
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-          shareText,
-          shareUrl,
-        }),
-      );
+      console.log('NEONDAK_ANDROID_SHARE_DEBUG', {
+        userAgent: browserNavigator?.userAgent ?? '',
+        canShareFiles,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        shareUrl,
+      });
 
       if (canShareFiles && browserNavigator?.share) {
-        await browserNavigator.share({
+        const shareData: ShareData = {
           title: '넌딱 판정 결과',
           text: shareText,
           url: shareUrl,
           files: [file],
-        });
+        };
+
+        await browserNavigator.share(shareData);
         setStatus('shared');
         return;
       }
@@ -162,7 +177,11 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
         return;
       }
 
-      console.error('NEONDAK_SHARE_FILE_ERROR', error);
+      console.error('NEONDAK_ANDROID_SHARE_ERROR', {
+        error,
+        message: getErrorMessage(error),
+        isAndroidFileReadError: isAndroidFileReadError(error),
+      });
 
       if (file) {
         await fallbackToDownloadAndLink(file, shareUrl);
