@@ -83,6 +83,7 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
     }
 
     const shareText = getShareText(result);
+    let debugStage = 'clicked';
 
     setManualUrl(null);
     setStatus('rendering');
@@ -90,12 +91,28 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
     try {
       const browserNavigator =
         typeof navigator === 'undefined' ? null : navigator;
+
+      console.log('NEONDAK_SHARE_CLICKED', {
+        userAgent: navigator.userAgent,
+        href: window.location.href,
+      });
+
+      debugStage = 'image-create';
+      console.log('NEONDAK_SHARE_IMAGE_CREATE_START');
+
       const imageBlob = await createStoryCardJpegBlob({
         result,
         photoUrl,
       });
 
+      console.log('NEONDAK_SHARE_IMAGE_CREATED', {
+        blobSize: imageBlob.size,
+        blobType: imageBlob.type,
+      });
+
       setStatus('uploading');
+      debugStage = 'link-create';
+      console.log('NEONDAK_SHARE_LINK_CREATE_START');
 
       const sharedResult = await createSharedResult({
         resultId: result.id,
@@ -103,6 +120,12 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
         punchline: result.punchline,
         photoUrl,
         imageBlob,
+      });
+
+      console.log('NEONDAK_SHARE_LINK_CREATED', {
+        shareId: sharedResult.shareId,
+        shareUrl: sharedResult.shareUrl,
+        imageUrl: sharedResult.imageUrl,
       });
 
       console.log('NEONDAK_SHARE_URL_DEBUG', {
@@ -115,21 +138,37 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
         imageBlobSize: imageBlob.size,
       });
 
+      debugStage = 'native-share';
+      console.log('NEONDAK_NATIVE_SHARE_START', {
+        hasNavigatorShare: typeof navigator.share === 'function',
+      });
+
       if (browserNavigator?.share) {
         await shareResultUrl(shareText, sharedResult.shareUrl);
+        console.log('NEONDAK_NATIVE_SHARE_DONE');
         return;
       }
 
+      debugStage = 'copy-fallback';
+      console.log('NEONDAK_SHARE_COPY_FALLBACK_START', {
+        shareUrl: sharedResult.shareUrl,
+      });
       setStatus(
         (await copyShareUrl(sharedResult.shareUrl)) ? 'link-copied' : 'manual',
       );
+      console.log('NEONDAK_SHARE_COPY_FALLBACK_DONE');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log('NEONDAK_NATIVE_SHARE_ABORTED');
         setStatus('idle');
         return;
       }
 
-      console.error('NEONDAK_CREATE_SHARE_RESULT_ERROR', error);
+      console.error('NEONDAK_CREATE_SHARE_RESULT_ERROR', {
+        stage: debugStage,
+        message: error instanceof Error ? error.message : String(error),
+        error,
+      });
       setStatus('failed');
     }
   }

@@ -87,15 +87,37 @@ export async function createSharedResult({
   photoUrl,
   imageBlob,
 }: CreateSharedResultArgs) {
+  console.log('NEONDAK_CREATE_SHARED_RESULT_START', {
+    resultId,
+    title,
+    punchlineLength: punchline.length,
+    hasPhotoUrl: Boolean(photoUrl),
+    imageBlobSize: imageBlob.size,
+    imageBlobType: imageBlob.type,
+  });
+
   if (imageBlob.size <= 0) {
+    console.error('NEONDAK_CREATE_SHARED_RESULT_EMPTY_BLOB', {
+      resultId,
+      imageBlobSize: imageBlob.size,
+      imageBlobType: imageBlob.type,
+    });
     throw new Error('공유 이미지가 비어 있습니다.');
   }
 
+  console.log('NEONDAK_CREATE_SHARED_RESULT_FIREBASE_START');
   const db = getFirebaseDb();
   const storage = getFirebaseStorage();
   const shareId = createShareId();
   const storagePath = `shared-results/${shareId}.jpg`;
   const imageRef = ref(storage, storagePath);
+
+  console.log('NEONDAK_CREATE_SHARED_RESULT_UPLOAD_START', {
+    shareId,
+    storagePath,
+    imageBlobSize: imageBlob.size,
+    imageBlobType: imageBlob.type,
+  });
 
   await uploadBytes(imageRef, imageBlob, {
     contentType: 'image/jpeg',
@@ -105,7 +127,27 @@ export async function createSharedResult({
     },
   });
 
+  console.log('NEONDAK_CREATE_SHARED_RESULT_UPLOAD_DONE', {
+    shareId,
+    storagePath,
+  });
+
+  console.log('NEONDAK_CREATE_SHARED_RESULT_DOWNLOAD_URL_START', {
+    shareId,
+    storagePath,
+  });
+
   const imageUrl = await getDownloadURL(imageRef);
+
+  console.log('NEONDAK_CREATE_SHARED_RESULT_DOWNLOAD_URL_DONE', {
+    shareId,
+    imageUrl,
+  });
+
+  console.log('NEONDAK_CREATE_SHARED_RESULT_FIRESTORE_START', {
+    shareId,
+    collection: sharedResultsCollection,
+  });
 
   await setDoc(doc(db, sharedResultsCollection, shareId), {
     resultId,
@@ -115,26 +157,59 @@ export async function createSharedResult({
     createdAt: serverTimestamp(),
   });
 
+  const shareUrl = buildShareUrl(shareId);
+
+  console.log('NEONDAK_CREATE_SHARED_RESULT_FIRESTORE_DONE', {
+    shareId,
+    collection: sharedResultsCollection,
+  });
+
+  console.log('NEONDAK_CREATE_SHARED_RESULT_DONE', {
+    shareId,
+    shareUrl,
+    imageUrl,
+  });
+
   return {
     shareId,
-    shareUrl: buildShareUrl(shareId),
+    shareUrl,
     imageUrl,
   };
 }
 
 export async function getSharedResult(shareId: string) {
+  console.log('NEONDAK_GET_SHARED_RESULT_START', {
+    shareId,
+  });
+
   if (!isValidShareId(shareId)) {
+    console.warn('NEONDAK_GET_SHARED_RESULT_INVALID_ID', {
+      shareId,
+    });
     return null;
   }
 
   try {
-    const snapshot = await getDoc(doc(getFirebaseDb(), sharedResultsCollection, shareId));
+    const snapshot = await getDoc(
+      doc(getFirebaseDb(), sharedResultsCollection, shareId),
+    );
 
     if (!snapshot.exists()) {
+      console.warn('NEONDAK_GET_SHARED_RESULT_NOT_FOUND', {
+        shareId,
+      });
       return null;
     }
 
-    return parseSharedResult(shareId, snapshot.data());
+    const sharedResult = parseSharedResult(shareId, snapshot.data());
+
+    console.log('NEONDAK_GET_SHARED_RESULT_DONE', {
+      shareId,
+      found: Boolean(sharedResult),
+      imageUrl: sharedResult?.imageUrl,
+    });
+
+    return sharedResult;
   } catch (error) {
     console.error('NEONDAK_GET_SHARED_RESULT_ERROR', {
       shareId,

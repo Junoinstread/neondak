@@ -479,6 +479,12 @@ export function storyCanvasToJpegBlob(
   canvas: HTMLCanvasElement,
   quality = 0.92,
 ) {
+  console.log('NEONDAK_STORY_JPEG_BLOB_START', {
+    width: canvas.width,
+    height: canvas.height,
+    quality,
+  });
+
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -491,6 +497,11 @@ export function storyCanvasToJpegBlob(
           reject(new Error('스토리 카드 JPEG가 비어 있습니다.'));
           return;
         }
+
+        console.log('NEONDAK_STORY_JPEG_BLOB_DONE', {
+          blobSize: blob.size,
+          blobType: blob.type,
+        });
 
         resolve(blob);
       },
@@ -511,9 +522,28 @@ export async function createStoryCardFile(input: DrawStoryCardInput) {
 }
 
 export async function createStoryCardJpegBlob(input: DrawStoryCardInput) {
+  console.log('NEONDAK_STORY_JPEG_CREATE_START', {
+    resultId: input.result.id,
+    hasPhotoUrl: Boolean(input.photoUrl),
+  });
+
   const canvas = await drawStoryCardToCanvas(input);
 
-  return storyCanvasToJpegBlob(canvas, 0.92);
+  console.log('NEONDAK_STORY_JPEG_CANVAS_READY', {
+    resultId: input.result.id,
+    width: canvas.width,
+    height: canvas.height,
+  });
+
+  const blob = await storyCanvasToJpegBlob(canvas, 0.92);
+
+  console.log('NEONDAK_STORY_JPEG_CREATE_DONE', {
+    resultId: input.result.id,
+    blobSize: blob.size,
+    blobType: blob.type,
+  });
+
+  return blob;
 }
 
 export function downloadStoryCardFile(file: File) {

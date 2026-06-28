@@ -1551,9 +1551,9 @@ export const RESULT_ARCHETYPES = [
   },
   {
     id: 'solo-self-confident-one-photo-ego',
-    title: '넌 딱 잘 나온 사진 한 장으로 자아 완성하는 놈이야',
+    title: '넌 딱 조별과제할 때 발표담당으로 정해질 상이야',
     punchline:
-      '사진 하나가 마음속 퍼즐 마지막 조각이다. 업로드 전부터 자아가 정리된다.',
+      '자신감과 의욕이 넘쳐서 어떤 일에도 의욕적으로 나서는 주인공이다.',
     reasons: [
       '잘 나온 컷 하나에 정체성이 붙는다',
       '사진 선택이 자아 정리처럼 진지하다',
@@ -1792,7 +1792,7 @@ export const RESULT_ARCHETYPES = [
   },
   {
     id: 'solo-selfie-survivor',
-    title: '넌 딱 셀카 찍고 17장 중에 이거 고른 놈이야',
+    title: '넌 딱 셀카 찍고 170장 중에 이거 고른 놈이야',
     punchline:
       '방금 찍은 척하지만 뒤에 버려진 사진들이 너무 많다. 이건 우연이 아니라 생존 경쟁이다.',
     reasons: [

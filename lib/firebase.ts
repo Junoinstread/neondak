@@ -23,17 +23,64 @@ export function isFirebaseConfigured() {
 function getFirebaseApp(): FirebaseApp {
   const missingKeys = getMissingFirebaseConfigKeys();
 
+  console.log('NEONDAK_FIREBASE_CONFIG_DEBUG', {
+    hasApiKey: Boolean(firebaseConfig.apiKey),
+    hasAuthDomain: Boolean(firebaseConfig.authDomain),
+    hasProjectId: Boolean(firebaseConfig.projectId),
+    hasStorageBucket: Boolean(firebaseConfig.storageBucket),
+    hasAppId: Boolean(firebaseConfig.appId),
+    missingKeys,
+    existingApps: getApps().length,
+  });
+
   if (missingKeys.length > 0) {
+    console.error('NEONDAK_FIREBASE_CONFIG_MISSING', {
+      missingKeys,
+    });
     throw new Error(`Firebase 설정이 없습니다: ${missingKeys.join(', ')}`);
   }
 
-  return getApps()[0] ?? initializeApp(firebaseConfig);
+  const existingApp = getApps()[0];
+
+  if (existingApp) {
+    console.log('NEONDAK_FIREBASE_APP_REUSE', {
+      projectId: firebaseConfig.projectId,
+    });
+    return existingApp;
+  }
+
+  console.log('NEONDAK_FIREBASE_APP_INIT_START', {
+    projectId: firebaseConfig.projectId,
+    storageBucket: firebaseConfig.storageBucket,
+  });
+
+  const app = initializeApp(firebaseConfig);
+
+  console.log('NEONDAK_FIREBASE_APP_INIT_DONE', {
+    projectId: firebaseConfig.projectId,
+  });
+
+  return app;
 }
 
 export function getFirebaseDb(): Firestore {
-  return getFirestore(getFirebaseApp());
+  console.log('NEONDAK_FIREBASE_DB_GET_START');
+  const db = getFirestore(getFirebaseApp());
+
+  console.log('NEONDAK_FIREBASE_DB_GET_DONE', {
+    projectId: firebaseConfig.projectId,
+  });
+
+  return db;
 }
 
 export function getFirebaseStorage(): FirebaseStorage {
-  return getStorage(getFirebaseApp());
+  console.log('NEONDAK_FIREBASE_STORAGE_GET_START');
+  const storage = getStorage(getFirebaseApp());
+
+  console.log('NEONDAK_FIREBASE_STORAGE_GET_DONE', {
+    storageBucket: firebaseConfig.storageBucket,
+  });
+
+  return storage;
 }
