@@ -33,6 +33,22 @@ function canShareStoryFile(file: File) {
   }
 }
 
+function isAndroidDevice() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  return /Android/i.test(navigator.userAgent);
+}
+
+function isIOSDevice() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 function getShareUrl() {
   const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
@@ -132,6 +148,28 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
     try {
       const browserNavigator =
         typeof navigator === 'undefined' ? null : navigator;
+
+      if (isAndroidDevice()) {
+        console.log('NEONDAK_SHARE_FILE_DEBUG', {
+          userAgent: browserNavigator?.userAgent ?? '',
+          platform: 'android',
+          strategy: 'text-url-share',
+          shareUrl,
+        });
+
+        if (browserNavigator?.share) {
+          await shareTextUrl(shareText, shareUrl);
+          return;
+        }
+
+        file = await createStoryCardFile({
+          result,
+          photoUrl,
+        });
+        await fallbackToDownloadAndLink(file, shareUrl);
+        return;
+      }
+
       file = await createStoryCardFile({
         result,
         photoUrl,
@@ -140,6 +178,8 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
 
       console.log('NEONDAK_SHARE_FILE_DEBUG', {
         userAgent: browserNavigator?.userAgent ?? '',
+        platform: isIOSDevice() ? 'ios' : 'other',
+        strategy: canShareFiles ? 'file-share' : 'text-url-share',
         canShareFiles,
         fileName: file.name,
         fileType: file.type,
@@ -174,17 +214,20 @@ export default function ShareButton({ result, photoUrl }: ShareButtonProps) {
 
       console.error('NEONDAK_SHARE_FILE_ERROR', error);
 
-      if (file) {
-        await fallbackToDownloadAndLink(file, shareUrl);
-        return;
+      if (!file) {
+        try {
+          file = await createStoryCardFile({
+            result,
+            photoUrl,
+          });
+        } catch (fallbackFileError) {
+          console.error('NEONDAK_SHARE_FILE_ERROR', fallbackFileError);
+          setStatus('failed');
+          return;
+        }
       }
 
-      try {
-        await shareTextUrl(shareText, shareUrl);
-      } catch (fallbackError) {
-        console.error('NEONDAK_SHARE_FILE_ERROR', fallbackError);
-        setStatus('failed');
-      }
+      await fallbackToDownloadAndLink(file, shareUrl);
     }
   }
 
